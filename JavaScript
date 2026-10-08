@@ -1,0 +1,218 @@
+// إعدادات المدينة والتسعير — عدّليها أو اجلبيها لاحقًا من الخادم
+const CFG={city:'سكيكدة',currency:'دج',base:100,perKm:35,min:200,speed:30,commission:0.1,
+// إحداثيات تقريبية: تحقّقي منها قبل الإطلاق
+places:[
+{n:'وسط المدينة',lat:36.8762,lng:6.9092},{n:'محطة الحافلات',lat:36.8715,lng:6.9051},
+{n:'ستورا',lat:36.9002,lng:6.8903},{n:'شاطئ ماركي',lat:36.8805,lng:6.9168},
+{n:'جامعة 20 أوت 1955',lat:36.8585,lng:6.9021},{n:'مستشفى سكيكدة',lat:36.8697,lng:6.9148},
+{n:'الحدائق',lat:36.883,lng:6.93}]};
+// طبقة البيانات: الواجهة تستدعي API فقط. استبدلي الداخل بـ fetch() إلى خادمك لاحقًا.
+// الدفع: حقل pay في الرحلة ('cash' الآن) — أضيفي مزوّد دفع إلكتروني هنا لاحقًا.
+const API=(()=>{
+const K='safelady_db',id=()=>Math.random().toString(36).slice(2,9),find=(a,i)=>a.find(x=>x.id===i);
+const seed=()=>({users:[
+{id:'a1',role:'admin',name:'الإدارة',email:'admin@safelady.dz',pass:'admin123',status:'active'},
+{id:'d1',role:'driver',name:'أمينة بن علي',phone:'0550000001',email:'driver@safelady.dz',pass:'1234',status:'active',car:'Renault Symbol',plate:'12345-120-21',docs:{license:'permis.jpg',id:'cni.jpg',car:'carte-grise.jpg'},online:false,created:Date.now()},
+{id:'p1',role:'passenger',name:'سارة مرابط',phone:'0660000002',email:'sara@safelady.dz',pass:'1234',status:'active',trusted:'0770000003',created:Date.now()}],
+rides:[],complaints:[],notifs:[]});
+let db=JSON.parse(localStorage.getItem(K)||'null')||seed();
+const save=()=>localStorage.setItem(K,JSON.stringify(db));
+addEventListener('storage',e=>{if(e.key===K){db=JSON.parse(e.newValue);window.onSync&&onSync()}});
+const km=(a,b)=>{const r=Math.PI/180,x=(b.lat-a.lat)*r,y=(b.lng-a.lng)*r,h=Math.sin(x/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(y/2)**2;return 12742*Math.asin(Math.sqrt(h))};
+const quote=(a,b)=>{const d=km(CFG.places[a],CFG.places[b])*1.3;return{km:d,price:Math.max(CFG.min,Math.round((CFG.base+CFG.perKm*d)/10)*10),mins:Math.max(3,Math.round(d/CFG.speed*60)+2)}};
+return{quote,
+me:()=>find(db.users,sessionStorage.sid),user:i=>find(db.users,i),users:r=>db.users.filter(u=>u.role===r),
+login(email,pass){const u=db.users.find(u=>u.email===email&&u.pass===pass);if(!u)throw'بيانات الدخول غير صحيحة';if(u.status==='blocked')throw'هذا الحساب محظور';sessionStorage.sid=u.id},
+logout(){delete sessionStorage.sid},
+register(d){if(db.users.some(u=>u.email===d.email))throw'هذا البريد مسجّل مسبقًا';const u={id:id(),status:d.role==='driver'?'pending':'active',created:Date.now(),online:false,...d};db.users.push(u);save();sessionStorage.sid=u.id},
+update(i,p){Object.assign(find(db.users,i),p);save()},
+rides:()=>db.rides,ride:i=>find(db.rides,i),
+book(d){db.rides.unshift({id:id(),status:'searching',created:Date.now(),chat:[],rejected:[],pay:'cash',...d,...quote(d.from,d.to)});save()},
+setRide(i,p){Object.assign(find(db.rides,i),p);save()},
+say(i,from,t){find(db.rides,i).chat.push({from,t});save()},
+notify(uid,t){db.notifs.unshift({id:id(),uid,t,at:Date.now()});save()},notifs:uid=>db.notifs.filter(n=>n.uid===uid),
+complain(d){db.complaints.unshift({id:id(),status:'open',at:Date.now(),...d});save()},complaints:()=>db.complaints,
+resolve(i){find(db.complaints,i).status='resolved';save()},
+reset(){localStorage.removeItem(K);sessionStorage.clear();location.reload()}}})();
+// طبقة ترجمة خفيفة (عربي/فرنسي/إنجليزي): بعد كل عرض تُترجم النصوص العربية الظاهرة.
+// لإضافة نص جديد أضيفي سطرًا: [عربي, فرنسي, إنجليزي]
+const LANGS={ar:'rtl',fr:'ltr',en:'ltr'},LBL={ar:'عربي',fr:'FR',en:'EN'};
+const D=[
+["دخول","Connexion","Log in"],["حساب جديد","Nouveau compte","Sign up"],["راكبة","Passagère","Rider"],["سائقة","Conductrice","Driver"],
+["الاسم الكامل","Nom complet","Full name"],["رقم الهاتف","Téléphone","Phone number"],["البريد الإلكتروني","E-mail","Email"],["كلمة المرور","Mot de passe","Password"],
+["هاتف شخص موثوق (اختياري)","Téléphone d'un proche (facultatif)","Trusted contact phone (optional)"],["نوع السيارة","Modèle de voiture","Car model"],["رقم اللوحة","Plaque d'immatriculation","Plate number"],
+["رخصة السياقة","Permis de conduire","Driving licence"],["بطاقة التعريف","Carte d'identité","ID card"],["البطاقة الرمادية","Carte grise","Vehicle registration"],["إنشاء الحساب","Créer le compte","Create account"],
+["تجربة سريعة:","Essai rapide :","Quick demo:"],["إدارة","Admin","Admin"],["تنقّلي بأمان في","Voyagez en toute sécurité à","Travel safely in"],["سكيكدة","Skikda","Skikda"],
+["الرئيسية","Accueil","Home"],["رحلاتي","Mes courses","My trips"],["الإشعارات","Notifications","Notifications"],["حسابي","Mon compte","Account"],["الطلبات","Demandes","Requests"],["الأرباح","Gains","Earnings"],
+["كيف كانت الرحلة؟","Comment était la course ?","How was your trip?"],["تعليق (اختياري)","Commentaire (facultatif)","Comment (optional)"],["إرسال التقييم","Envoyer l'avis","Submit rating"],
+["بحث عن سائقة","Recherche d'une conductrice","Finding a driver"],["السائقة في الطريق","La conductrice arrive","Driver on the way"],["الرحلة جارية","Course en cours","Trip in progress"],["مكتملة","terminée","Completed"],["ملغاة","annulée","Cancelled"],
+["دفع نقدي","paiement en espèces","cash payment"],["جارٍ البحث عن سائقة قريبة…","Recherche d'une conductrice proche…","Looking for a nearby driver…"],["ابدئي محادثة","Démarrez la discussion","Start a chat"],["اكتبي رسالة…","Écrivez un message…","Write a message…"],
+["إرسال","Envoyer","Send"],["بدء الرحلة","Démarrer la course","Start trip"],["إنهاء الرحلة وتحصيل","Terminer et encaisser","End trip & collect"],["مشاركة الرحلة","Partager la course","Share trip"],
+["إبلاغ عن مشكلة","Signaler un problème","Report a problem"],["إلغاء","Annuler","Cancel"],["SOS طوارئ","SOS urgence","SOS emergency"],["د","min","min"],["كم","km","km"],["دج","DA","DZD"],
+["سجل الرحلات","Historique des courses","Trip history"],["لا توجد رحلات بعد.","Aucune course pour l'instant.","No trips yet."],["لا توجد إشعارات.","Aucune notification.","No notifications."],
+["الملف الشخصي","Profil","Profile"],["الاسم","Nom","Name"],["الهاتف","Téléphone","Phone"],["هاتف الشخص الموثوق (للمشاركة والطوارئ)","Téléphone du proche (partage et urgences)","Trusted contact phone (sharing & emergencies)"],
+["تقييمك","Votre note","Your rating"],["حفظ","Enregistrer","Save"],["الدعم","Support","Support"],["اكتبي رسالتك أو شكواك","Écrivez votre message ou réclamation","Write your message or complaint"],
+["إرسال للدعم","Envoyer au support","Send to support"],["تسجيل الخروج","Se déconnecter","Log out"],["إعادة ضبط بيانات التجربة","Réinitialiser les données de test","Reset demo data"],
+["إلى أين؟","Où allez-vous ?","Where to?"],["الانطلاق","Départ","Pickup"],["الوجهة","Destination","Destination"],["الآن","Maintenant","Now"],["حجز مسبق","Réserver à l'avance","Schedule"],
+["اختاري وجهة مختلفة عن الانطلاق.","Choisissez une destination différente du départ.","Choose a destination different from the pickup."],["طريقة الدفع","Mode de paiement","Payment method"],["نقدًا","Espèces","Cash"],
+["بطاقة إلكترونية (قريبًا)","Carte bancaire (bientôt)","Card (coming soon)"],["اطلبي الآن","Commander maintenant","Book now"],["احجزي الرحلة","Réserver la course","Book trip"],
+["حسابك قيد المراجعة","Votre compte est en cours d'examen","Your account is under review"],["تعذّر تفعيل الحساب","Activation impossible","Account could not be activated"],
+["سنفعّل حسابك بعد موافقة الإدارة على وثائقك.","Nous activerons votre compte après validation de vos documents.","We'll activate your account once the admin approves your documents."],["تواصلي مع الإدارة.","Contactez l'administration.","Please contact the admin."],
+["رحلات مكتملة","Courses terminées","Completed trips"],["صافي الأرباح","Gains nets","Net earnings"],["المدفوعات","Paiements","Payments"],["الأجرة","Tarif","Fare"],["عمولة","commission","commission"],["لا أرباح بعد.","Aucun gain pour l'instant.","No earnings yet."],
+["متاحة","Disponible","Available"],["غير متاحة","Indisponible","Unavailable"],["إيقاف الاستقبال","Arrêter","Go offline"],["بدء الاستقبال","Commencer","Go online"],["طلبات الرحلات","Demandes de courses","Ride requests"],
+["فورية","immédiate","instant"],["قبول","Accepter","Accept"],["رفض","Refuser","Decline"],["لا توجد طلبات الآن.","Aucune demande pour le moment.","No requests right now."],["فعّلي الاستقبال لرؤية الطلبات.","Activez la réception pour voir les demandes.","Go online to see requests."],
+["لوحة الإدارة","Tableau de bord admin","Admin dashboard"],["خروج","Quitter","Log out"],["الإحصائيات","Statistiques","Statistics"],["الراكبات","Passagères","Riders"],["السائقات","Conductrices","Drivers"],["الرحلات","Courses","Trips"],["الشكاوى","Réclamations","Complaints"],
+["إلغاء الحظر","Débloquer","Unblock"],["حظر","Bloquer","Block"],["سائقات معتمدات","Conductrices validées","Approved drivers"],["بانتظار الموافقة","En attente de validation","Pending approval"],["إجمالي الرحلات","Total des courses","Total trips"],
+["الإيرادات","Revenus","Revenue"],["عمولة المنصة","Commission plateforme","Platform commission"],["شكاوى مفتوحة","Réclamations ouvertes","Open complaints"],["لا توجد راكبات.","Aucune passagère.","No riders."],["الحالة:","Statut :","Status:"],
+["الوثائق:","Documents :","Documents:"],["موافقة","Valider","Approve"],["لا توجد رحلات.","Aucune course.","No trips."],["تقييم السائقة","Note de la conductrice","Driver rating"],["بلاغ","Signalement","Report"],["دعم","Support","Support"],
+["رحلة","Course","Trip"],["تمت المعالجة","Traité","Resolved"],["لا توجد شكاوى.","Aucune réclamation.","No complaints."],
+["اختاري تاريخ ووقت الرحلة","Choisissez la date et l'heure","Choose a date and time"],["تم إرسال طلبك","Votre demande a été envoyée","Your request was sent"],["تم إلغاء الرحلة","Course annulée","Trip cancelled"],
+["صفي المشكلة","Décrivez le problème","Describe the problem"],["تم إرسال بلاغك للإدارة","Signalement envoyé à l'administration","Your report was sent to the admin"],
+["تم نسخ رابط التتبّع لإرساله إلى","Lien de suivi copié, à envoyer à","Tracking link copied, send it to"],["تم نسخ رابط التتبّع — أضيفي رقمًا موثوقًا في حسابك","Lien copié — ajoutez un proche dans votre compte","Link copied — add a trusted contact in your account"],
+["إرسال تنبيه طوارئ للإدارة؟","Envoyer une alerte d'urgence à l'administration ?","Send an emergency alert to the admin?"],["للخطر الفوري اتصلي بالشرطة 1548 أو الدرك 1055.","En cas de danger immédiat, appelez la police 1548 ou la gendarmerie 1055.","For immediate danger call the police 1548 or the gendarmerie 1055."],
+["تم إرسال تنبيه SOS للإدارة","Alerte SOS envoyée à l'administration","SOS alert sent to the admin"],["شكرًا لتقييمك","Merci pour votre avis","Thanks for your rating"],["تم الحفظ","Enregistré","Saved"],["وصلت رسالتك للدعم","Message reçu par le support","Your message reached support"],
+["قبلت رحلتك","a accepté votre course","accepted your trip"],["بدأت رحلتك","Votre course a commencé","Your trip has started"],["انتهت رحلتك. المبلغ:","Course terminée. Montant :","Trip ended. Amount:"],["تمت مشاركة الرحلة مع","Course partagée avec","Trip shared with"],
+["شخص موثوق","un proche","a trusted contact"],["تم تفعيل حسابك","Votre compte est activé","Your account is activated"],["تم تغيير حالة حسابك:","Statut de votre compte modifié :","Your account status changed:"],["استغاثة أثناء رحلة","Appel de détresse pendant la course","Distress call during trip"],
+["تنبيه SOS جديد","Nouvelle alerte SOS","New SOS alert"],["بيانات الدخول غير صحيحة","Identifiants incorrects","Incorrect login details"],["هذا الحساب محظور","Ce compte est bloqué","This account is blocked"],["هذا البريد مسجّل مسبقًا","Cet e-mail est déjà utilisé","This email is already registered"],
+["وسط المدينة","Centre-ville","City centre"],["محطة الحافلات","Gare routière","Bus station"],["ستورا","Stora","Stora"],["شاطئ ماركي","Plage Marquet","Marquet beach"],["جامعة 20 أوت 1955","Université 20 Août 1955","20 August 1955 University"],
+["مستشفى سكيكدة","Hôpital de Skikda","Skikda hospital"],["الحدائق","El Hadaïk","El Hadaiek"]];
+const RX={};
+for(const[l,i]of[['fr',1],['en',2]])RX[l]=D.slice().sort((a,b)=>b[0].length-a[0].length).map(r=>[new RegExp('(?<![\\u0600-\\u06FF])'+r[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![\\u0600-\\u06FF])','g'),r[i]]);
+function tr(s){if(S.lang==='ar')return s;let o=s;for(const[r,v]of RX[S.lang])o=o.replace(r,()=>v);return o.replace(/←/g,'→')}
+function applyLang(root=app){const h=document.documentElement;h.lang=S.lang;h.dir=LANGS[S.lang];if(S.lang==='ar')return;
+const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);for(let n;n=w.nextNode();)n.nodeValue=tr(n.nodeValue);
+root.querySelectorAll('[placeholder]').forEach(e=>e.placeholder=tr(e.placeholder))}
+const langSw=()=>`<div class="lang">${Object.keys(LANGS).map(l=>`<button data-act="lang" data-v="${l}" class="${S.lang===l?'on':''}">${LBL[l]}</button>`).join('')}</div>`;
+// واجهة التطبيق: راكبة / سائقة / إدارة
+const $=s=>document.querySelector(s),app=$('#app'),PL=CFG.places,pn=i=>PL[i].n;
+const S={lang:localStorage.sl_lang||'ar',tab:'home',mode:'login',role:'passenger',from:0,to:1,when:'now',date:'',star:5,atab:'stats'};
+const fmt=t=>new Date(t).toLocaleString(S.lang==='ar'?'ar-DZ':S.lang==='fr'?'fr-FR':'en-GB',{dateStyle:'short',timeStyle:'short'}),money=n=>`${n} ${CFG.currency}`;
+const ST={searching:'بحث عن سائقة',accepted:'السائقة في الطريق',ongoing:'الرحلة جارية',completed:'مكتملة',cancelled:'ملغاة'};
+const stars=n=>n==='—'?'—':'★'.repeat(Math.round(n))+'☆'.repeat(5-Math.round(n))+' '+n;
+const avg=(uid,k)=>{const a=API.rides().filter(r=>r[k==='ratingD'?'driverId':'passengerId']===uid&&r[k]).map(r=>r[k].s);return a.length?(a.reduce((x,y)=>x+y)/a.length).toFixed(1):'—'};
+const prog=r=>r.status==='ongoing'?Math.min(1,(Date.now()-r.startedAt)/(r.mins*3000)):r.status==='accepted'?0:null; // محاكاة سريعة للتجربة
+const toast=t=>{const e=$('#toast');e.textContent=tr(String(t));e.className='show';setTimeout(()=>e.className='',2600)};
+const logo=s=>`<img class="${s?'lg':'biglogo'}" src="logo.jpg" alt="Safe Lady">`;
+
+function mapSVG(a,b,p){const xy=q=>[(q.lng-6.885)/.05*300+10,(36.905-q.lat)/.05*180+10];
+let s='<svg viewBox="0 0 320 200"><rect width="320" height="200" fill="#f3e9f0"/><path d="M0 0H320V30Q250 48 190 32T0 42Z" fill="#cfe0f2"/>';
+PL.forEach(q=>{const[x,y]=xy(q);s+=`<circle cx="${x}" cy="${y}" r="3" fill="#b79ab0"/><text x="${x+5}" y="${y+3}" font-size="7" fill="#7c6a82">${q.n}</text>`});
+if(a!=null&&b!=null&&a!==b){const[x1,y1]=xy(PL[a]),[x2,y2]=xy(PL[b]);
+s+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#c2468d" stroke-width="3" stroke-dasharray="6 4"/><circle cx="${x1}" cy="${y1}" r="6" fill="#1f9d7a"/><circle cx="${x2}" cy="${y2}" r="6" fill="#4a1d4f"/>`;
+if(p!=null)s+=`<text x="${x1+(x2-x1)*p-8}" y="${y1+(y2-y1)*p+6}" font-size="18">🚗</text>`}
+return s+'</svg>'}
+
+// ---------- الدخول ----------
+function authView(){const reg=S.mode==='reg',dr=S.role==='driver';
+return `<div class="auth">${langSw()}${logo()}<p class="muted" style="text-align:center">تنقّلي بأمان في ${CFG.city}</p>
+<div class="seg"><button data-act="mode" data-v="login" class="${reg?'':'on'}">دخول</button><button data-act="mode" data-v="reg" class="${reg?'on':''}">حساب جديد</button></div>
+<form data-form="${reg?'reg':'login'}">
+${reg?`<select name="role" data-chg="role"><option value="passenger">راكبة</option><option value="driver" ${dr?'selected':''}>سائقة</option></select><input name="name" placeholder="الاسم الكامل" required><input name="phone" placeholder="رقم الهاتف" required>`:''}
+<input name="email" type="email" placeholder="البريد الإلكتروني" required><input name="pass" type="password" placeholder="كلمة المرور" required minlength="4">
+${reg&&!dr?'<input name="trusted" placeholder="هاتف شخص موثوق (اختياري)">':''}
+${reg&&dr?`<input name="car" placeholder="نوع السيارة" required><input name="plate" placeholder="رقم اللوحة" required>
+<label>رخصة السياقة<input type="file" name="f_license" required></label><label>بطاقة التعريف<input type="file" name="f_id" required></label><label>البطاقة الرمادية<input type="file" name="f_car" required></label>`:''}
+<button class="btn">${reg?'إنشاء الحساب':'دخول'}</button></form>
+${reg?'':`<div class="demo">تجربة سريعة:<button data-act="demo" data-v="sara@safelady.dz">راكبة</button><button data-act="demo" data-v="driver@safelady.dz">سائقة</button><button data-act="demo" data-v="admin@safelady.dz">إدارة</button></div>`}</div>`}
+
+const shell=(u,body,nav)=>`<header>${logo('s')}<b>Safe Lady</b><span class="grow"></span>${langSw()}</header><main>${body}</main>${nav?`<nav>${nav.map(([k,i,l])=>`<button data-act="tab" data-v="${k}" class="${S.tab===k?'on':''}"><i>${i}</i>${l}</button>`).join('')}</nav>`:''}`;
+
+// ---------- مكوّنات مشتركة ----------
+function rateCard(r,role){return `<div class="card"><h3>كيف كانت الرحلة؟</h3><div class="stars" style="text-align:center">${[1,2,3,4,5].map(i=>`<button data-act="star" data-v="${i}" class="${i<=S.star?'on':''}" aria-label="${i}">★</button>`).join('')}</div>
+<form data-form="rate" data-id="${r.id}" data-role="${role}"><input name="t" placeholder="تعليق (اختياري)"><button class="btn" style="width:100%;margin-top:8px">إرسال التقييم</button></form></div>`}
+
+function ridePanel(r,role){const d=r.driverId&&API.user(r.driverId),p=API.user(r.passengerId),o=role==='p'?d:p,me=role==='p'?'p':'d',p0=prog(r);
+return `<div class="card map" id="mapbox" data-rid="${r.id}">${mapSVG(r.from,r.to,p0)}</div>
+<div class="card"><span class="badge">${ST[r.status]}${r.when?' · '+fmt(r.when):''}</span><p><b>${pn(r.from)}</b> ← <b>${pn(r.to)}</b></p>
+<div class="quote"><b>${money(r.price)}</b><span>≈ ${r.mins} د · دفع نقدي</span></div>
+${o?`<div class="who"><div class="av">${o.name[0]}</div><div><b>${o.name}</b><br><small>${role==='p'?`${d.car} · ${d.plate} · ${stars(avg(d.id,'ratingD'))}`:`${o.phone} · ${stars(avg(p.id,'ratingP'))}`}</small></div></div>
+<div class="chat">${r.chat.map(m=>`<div class="msg ${m.from===me?'me':''}">${m.t}</div>`).join('')||'<small>ابدئي محادثة</small>'}</div>
+<form class="row" data-form="chat" data-id="${r.id}" data-me="${me}"><input name="t" placeholder="اكتبي رسالة…" required style="flex:3"><button class="sm">إرسال</button></form>`:'<p class="muted">جارٍ البحث عن سائقة قريبة…</p>'}
+${role==='d'&&r.status==='accepted'?`<button class="btn ok" data-act="start" data-id="${r.id}">بدء الرحلة</button>`:''}
+${role==='d'&&r.status==='ongoing'?`<button class="btn ok" data-act="end" data-id="${r.id}">إنهاء الرحلة وتحصيل ${money(r.price)}</button>`:''}
+${role==='p'?`<div class="row"><button class="sm ghost" data-act="share" data-id="${r.id}">مشاركة الرحلة</button><button class="sm ghost" data-act="report" data-id="${r.id}">إبلاغ عن مشكلة</button>${r.status!=='ongoing'?`<button class="sm ghost" data-act="cancel" data-id="${r.id}">إلغاء</button>`:''}</div>`:''}
+${o?`<button class="btn sos" data-act="sos" data-id="${r.id}">SOS طوارئ</button>`:''}</div>`}
+
+const tripsView=(u,k)=>`<div class="card"><h3>سجل الرحلات</h3>${API.rides().filter(r=>r[k]===u.id).map(r=>`<div class="item"><b>${pn(r.from)} ← ${pn(r.to)}</b><small>${fmt(r.created)} · ${money(r.price)} · ${ST[r.status]}${r.ratingD?' · '+stars(r.ratingD.s):''}</small></div>`).join('')||'<p class="muted">لا توجد رحلات بعد.</p>'}</div>`;
+const notifView=u=>`<div class="card"><h3>الإشعارات</h3>${API.notifs(u.id).map(n=>`<div class="item">${n.t}<small>${fmt(n.at)}</small></div>`).join('')||'<p class="muted">لا توجد إشعارات.</p>'}</div>`;
+const profView=u=>`<div class="card"><h3>الملف الشخصي</h3><form data-form="profile" style="display:grid;gap:10px"><label>الاسم<input name="name" value="${u.name}"></label><label>الهاتف<input name="phone" value="${u.phone||''}"></label>
+${u.role==='passenger'?`<label>هاتف الشخص الموثوق (للمشاركة والطوارئ)<input name="trusted" value="${u.trusted||''}"></label>`:`<small>${u.car} · ${u.plate} · تقييمك ${stars(avg(u.id,'ratingD'))}</small>`}<button class="btn">حفظ</button></form></div>
+<div class="card"><h3>الدعم</h3><form data-form="support" style="display:grid;gap:10px"><textarea name="t" rows="3" placeholder="اكتبي رسالتك أو شكواك" required></textarea><button class="btn ghost">إرسال للدعم</button></form></div>
+<button class="btn ghost" data-act="logout">تسجيل الخروج</button><button class="sm ghost" data-act="reset">إعادة ضبط بيانات التجربة</button>`;
+
+// ---------- الراكبة ----------
+function passenger(u){const rs=API.rides().filter(r=>r.passengerId===u.id),
+act=rs.find(r=>['searching','accepted','ongoing'].includes(r.status)),un=rs.find(r=>r.status==='completed'&&!r.ratingD);let b;
+if(S.tab==='trips')b=tripsView(u,'passengerId');else if(S.tab==='notif')b=notifView(u);else if(S.tab==='me')b=profView(u);
+else if(act)b=ridePanel(act,'p');else if(un)b=rateCard(un,'p');
+else{const q=S.from!==S.to?API.quote(S.from,S.to):null,op=s=>PL.map((p,i)=>`<option value="${i}" ${s===i?'selected':''}>${p.n}</option>`).join('');
+b=`<div class="card map" id="mapbox">${mapSVG(S.from,S.to)}</div><div class="card"><h3>إلى أين؟</h3>
+<label>الانطلاق<select data-chg="from">${op(S.from)}</select></label><label>الوجهة<select data-chg="to">${op(S.to)}</select></label>
+<div class="seg"><button data-act="when" data-v="now" class="${S.when==='now'?'on':''}">الآن</button><button data-act="when" data-v="later" class="${S.when==='later'?'on':''}">حجز مسبق</button></div>
+${S.when==='later'?`<input type="datetime-local" value="${S.date}" data-chg="date">`:''}
+${q?`<div class="quote"><b>${money(q.price)}</b><span>≈ ${q.mins} د · ${q.km.toFixed(1)} كم</span></div>`:'<p class="muted">اختاري وجهة مختلفة عن الانطلاق.</p>'}
+<label>طريقة الدفع<select><option>نقدًا</option><option disabled>بطاقة إلكترونية (قريبًا)</option></select></label>
+<button class="btn" data-act="book" ${q?'':'disabled'}>${S.when==='now'?'اطلبي الآن':'احجزي الرحلة'}</button></div>`}
+return shell(u,b,[['home','🏠','الرئيسية'],['trips','🕘','رحلاتي'],['notif','🔔','الإشعارات'],['me','👤','حسابي']])}
+
+// ---------- السائقة ----------
+function driver(u){let b;
+if(u.status!=='active')b=`<div class="card"><h3>${u.status==='pending'?'حسابك قيد المراجعة':'تعذّر تفعيل الحساب'}</h3><p>${u.status==='pending'?'سنفعّل حسابك بعد موافقة الإدارة على وثائقك.':'تواصلي مع الإدارة.'}</p><button class="btn ghost" data-act="logout">تسجيل الخروج</button></div>`;
+else{const rs=API.rides(),act=rs.find(r=>r.driverId===u.id&&['accepted','ongoing'].includes(r.status)),un=rs.find(r=>r.driverId===u.id&&r.status==='completed'&&!r.ratingP);
+const mine=rs.filter(r=>r.driverId===u.id&&r.status==='completed'),net=r=>Math.round(r.price*(1-CFG.commission));
+if(S.tab==='trips')b=tripsView(u,'driverId');else if(S.tab==='notif')b=notifView(u);else if(S.tab==='me')b=profView(u);
+else if(S.tab==='earn')b=`<div class="grid"><div class="stat"><b>${mine.length}</b>رحلات مكتملة</div><div class="stat"><b>${money(mine.reduce((s,r)=>s+net(r),0))}</b>صافي الأرباح</div></div><div class="card"><h3>المدفوعات</h3>${mine.map(r=>`<div class="item"><b>${money(net(r))}</b><small>${fmt(r.endedAt)} · الأجرة ${money(r.price)} · عمولة ${CFG.commission*100}% · نقدًا${r.ratingP?' · '+stars(r.ratingP.s):''}</small></div>`).join('')||'<p class="muted">لا أرباح بعد.</p>'}</div>`;
+else if(act)b=ridePanel(act,'d');else if(un)b=rateCard(un,'d');
+else{const reqs=u.online?rs.filter(r=>r.status==='searching'&&!r.rejected.includes(u.id)):[];
+b=`<div class="card"><div class="quote"><b>${u.online?'متاحة':'غير متاحة'}</b><button class="sm ${u.online?'bad':'ok'}" data-act="online">${u.online?'إيقاف الاستقبال':'بدء الاستقبال'}</button></div></div>
+<div class="card"><h3>طلبات الرحلات</h3>${reqs.map(r=>{const p=API.user(r.passengerId);return `<div class="item"><b>${pn(r.from)} ← ${pn(r.to)}</b><small>${p.name} · ${stars(avg(p.id,'ratingP'))} · ${money(r.price)} · ${r.mins} د${r.when?' · '+fmt(r.when):' · فورية'}</small><div class="row"><button class="sm ok" data-act="accept" data-id="${r.id}">قبول</button><button class="sm ghost" data-act="reject" data-id="${r.id}">رفض</button></div></div>`}).join('')||`<p class="muted">${u.online?'لا توجد طلبات الآن.':'فعّلي الاستقبال لرؤية الطلبات.'}</p>`}</div>`}}
+return shell(u,b,u.status==='active'?[['home','🚗','الطلبات'],['trips','🕘','رحلاتي'],['earn','💰','الأرباح'],['notif','🔔','الإشعارات'],['me','👤','حسابي']]:null)}
+
+// ---------- الإدارة ----------
+function admin(u){document.body.classList.add('wide');const R=API.rides(),P=API.users('passenger'),D=API.users('driver'),C=API.complaints(),done=R.filter(r=>r.status==='completed'),rev=done.reduce((s,r)=>s+r.price,0);
+const blk=x=>x.status==='blocked'?`<button class="sm ok" data-act="setst" data-id="${x.id}" data-v="active">إلغاء الحظر</button>`:`<button class="sm bad" data-act="setst" data-id="${x.id}" data-v="blocked">حظر</button>`;
+const T={stats:`<div class="grid"><div class="stat"><b>${P.length}</b>الراكبات</div><div class="stat"><b>${D.filter(d=>d.status==='active').length}</b>سائقات معتمدات</div><div class="stat"><b>${D.filter(d=>d.status==='pending').length}</b>بانتظار الموافقة</div><div class="stat"><b>${R.length}</b>إجمالي الرحلات (${done.length} مكتملة)</div><div class="stat"><b>${money(rev)}</b>الإيرادات</div><div class="stat"><b>${money(Math.round(rev*CFG.commission))}</b>عمولة المنصة</div><div class="stat"><b>${C.filter(c=>c.status==='open').length}</b>شكاوى مفتوحة</div></div>`,
+pass:`<div class="card">${P.map(p=>`<div class="item"><b>${p.name}</b><small>${p.phone} · ${p.email} · ${R.filter(r=>r.passengerId===p.id).length} رحلة · ${p.status}</small><div>${blk(p)}</div></div>`).join('')||'<p class="muted">لا توجد راكبات.</p>'}</div>`,
+drv:`<div class="card">${D.map(d=>`<div class="item"><b>${d.name} — ${d.car} (${d.plate})</b><small>${d.phone} · ${stars(avg(d.id,'ratingD'))} · الحالة: ${d.status}</small><small>الوثائق: ${Object.values(d.docs||{}).join('، ')}</small><div class="row">${d.status!=='active'?`<button class="sm ok" data-act="setst" data-id="${d.id}" data-v="active">موافقة</button>`:''}${d.status==='pending'?`<button class="sm ghost" data-act="setst" data-id="${d.id}" data-v="rejected">رفض</button>`:''}${blk(d)}</div></div>`).join('')}</div>`,
+rides:`<div class="card">${R.map(r=>`<div class="item"><b>${pn(r.from)} ← ${pn(r.to)} · ${money(r.price)}</b><small>${fmt(r.created)} · ${API.user(r.passengerId)?.name} / ${API.user(r.driverId)?.name||'—'} · ${ST[r.status]}${r.ratingD?' · تقييم السائقة '+stars(r.ratingD.s)+(r.ratingD.t?' «'+r.ratingD.t+'»':''):''}</small></div>`).join('')||'<p class="muted">لا توجد رحلات.</p>'}</div>`,
+comp:`<div class="card">${C.map(c=>`<div class="item"><b>${c.type==='sos'?'🚨 SOS':c.type==='report'?'بلاغ':'دعم'} — ${API.user(c.uid)?.name}</b><span>${c.text}</span><small>${fmt(c.at)}${c.rideId?' · رحلة '+c.rideId:''} · ${c.status}</small>${c.status==='open'?`<div><button class="sm ok" data-act="resolve" data-id="${c.id}">تمت المعالجة</button></div>`:''}</div>`).join('')||'<p class="muted">لا توجد شكاوى.</p>'}</div>`};
+const tabs=[['stats','الإحصائيات'],['pass','الراكبات'],['drv','السائقات'],['rides','الرحلات'],['comp','الشكاوى']];
+return `<header>${logo('s')}<b>لوحة الإدارة</b><span class="grow"></span>${langSw()}<button class="sm ghost" data-act="logout">خروج</button></header><main><div class="tabs">${tabs.map(([k,l])=>`<button data-act="atab" data-v="${k}" class="${S.atab===k?'on':''}">${l}</button>`).join('')}</div>${T[S.atab]}</main>`}
+
+function render(){const u=API.me();document.body.classList.remove('wide');
+app.innerHTML=!u?authView():u.role==='admin'?admin(u):u.role==='driver'?driver(u):passenger(u);applyLang()}
+
+// ---------- الأحداث ----------
+const ACT={
+mode:b=>{S.mode=b.v},lang:b=>{S.lang=b.v;localStorage.sl_lang=b.v},tab:b=>{S.tab=b.v},atab:b=>{S.atab=b.v},when:b=>{S.when=b.v},star:b=>{S.star=+b.v},
+demo:b=>{API.login(b.v,b.v.startsWith('admin')?'admin123':'1234');S.tab='home'},
+logout:()=>{API.logout();S.tab='home'},reset:()=>API.reset(),
+book:()=>{const u=API.me();if(S.when==='later'&&!S.date)return toast('اختاري تاريخ ووقت الرحلة');
+API.book({passengerId:u.id,from:S.from,to:S.to,when:S.when==='later'?new Date(S.date).getTime():null});toast('تم إرسال طلبك')},
+cancel:b=>{API.setRide(b.id,{status:'cancelled'});toast('تم إلغاء الرحلة')},
+online:()=>{const u=API.me();API.update(u.id,{online:!u.online})},
+accept:b=>{const u=API.me(),r=API.ride(b.id);API.setRide(b.id,{status:'accepted',driverId:u.id});API.notify(r.passengerId,`${u.name} قبلت رحلتك (${u.car} · ${u.plate})`)},
+reject:b=>{const r=API.ride(b.id);API.setRide(b.id,{rejected:[...r.rejected,API.me().id]})},
+start:b=>{API.setRide(b.id,{status:'ongoing',startedAt:Date.now()});API.notify(API.ride(b.id).passengerId,'بدأت رحلتك')},
+end:b=>{const r=API.ride(b.id);API.setRide(b.id,{status:'completed',endedAt:Date.now()});API.notify(r.passengerId,`انتهت رحلتك. المبلغ: ${money(r.price)} نقدًا`);S.star=5},
+share:b=>{const u=API.me();const t=`تتبّعي رحلتي على Safe Lady: ${location.origin}/track/${b.id}`;navigator.clipboard?.writeText(t);API.notify(u.id,`تمت مشاركة الرحلة مع ${u.trusted||'شخص موثوق'}`);toast(u.trusted?`تم نسخ رابط التتبّع لإرساله إلى ${u.trusted}`:'تم نسخ رابط التتبّع — أضيفي رقمًا موثوقًا في حسابك')},
+report:b=>{const t=prompt(tr('صفي المشكلة'));if(t){API.complain({type:'report',rideId:b.id,uid:API.me().id,text:t});toast('تم إرسال بلاغك للإدارة')}},
+sos:b=>{if(!confirm(tr('إرسال تنبيه طوارئ للإدارة؟\nللخطر الفوري اتصلي بالشرطة 1548 أو الدرك 1055.')))return;
+const u=API.me(),r=API.ride(b.id);API.complain({type:'sos',rideId:b.id,uid:u.id,text:`استغاثة أثناء رحلة ${pn(r.from)} ← ${pn(r.to)}`});API.notify('a1','🚨 تنبيه SOS جديد');toast('تم إرسال تنبيه SOS للإدارة')},
+setst:b=>{API.update(b.id,{status:b.v});API.notify(b.id,b.v==='active'?'تم تفعيل حسابك':'تم تغيير حالة حسابك: '+b.v)},
+resolve:b=>API.resolve(b.id)};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;try{ACT[b.dataset.act](b.dataset)}catch(x){toast(x)}render()});
+document.addEventListener('change',e=>{const k=e.target.dataset.chg;if(!k)return;const v=e.target.value;
+if(k==='role')S.role=v;else if(k==='date')S.date=v;else if(k==='from'||k==='to')S[k]=+v;render()});
+document.addEventListener('submit',e=>{e.preventDefault();const f=e.target,k=f.dataset.form,d=Object.fromEntries(new FormData(f)),u=API.me();
+try{
+if(k==='login'){API.login(d.email,d.pass)}
+else if(k==='reg'){if(d.role==='driver'){d.docs={license:d.f_license.name,id:d.f_id.name,car:d.f_car.name};delete d.f_license;delete d.f_id;delete d.f_car}API.register(d);S.tab='home'}
+else if(k==='chat')API.say(f.dataset.id,f.dataset.me,d.t);
+else if(k==='rate'){API.setRide(f.dataset.id,{[f.dataset.role==='p'?'ratingD':'ratingP']:{s:S.star,t:d.t}});toast('شكرًا لتقييمك')}
+else if(k==='profile'){API.update(u.id,d);toast('تم الحفظ')}
+else if(k==='support'){API.complain({type:'support',uid:u.id,text:d.t});f.reset();toast('وصلت رسالتك للدعم')}
+}catch(x){toast(x)}render()});
+window.onSync=()=>{if(!document.activeElement.matches('input,textarea,select'))render()};
+setInterval(()=>{const m=$('#mapbox[data-rid]');if(!m)return;const r=API.ride(m.dataset.rid);if(r&&r.status==='ongoing'){m.innerHTML=mapSVG(r.from,r.to,prog(r));applyLang(m)}},1000);
+render();
